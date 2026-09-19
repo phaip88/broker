@@ -6,6 +6,15 @@ on:
   pull_request:
 
 jobs:
+  lint-proto:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: bufbuild/buf-setup-action@v1
+        with:
+          version: '1.50.0'
+      - run: buf lint
+
   build-and-test-go:
     runs-on: ubuntu-latest
     steps:
@@ -57,7 +66,7 @@ jobs:
           retention-days: 30
 
   remote-sandbox-test:
-    needs: [build-and-test-go, build-node-components]
+    needs: [lint-proto, build-and-test-go, build-node-components]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
