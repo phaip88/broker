@@ -6,49 +6,140 @@ on:
   pull_request:
 
 jobs:
-  go:
+  build-and-test-go:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: .
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version: '1.23'
-          cache: true
       - run: gofmt -w cmd internal
-      - run: go test -race ./...
       - run: go vet ./...
-      - run: go build -trimpath -o dist/broker-api ./cmd/broker-api
+      - run: go test -v -race ./...
+      - name: Build multi-platform binaries
+        run: |
+          mkdir -p dist
+          GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o dist/broker-api-linux-amd64 ./cmd/broker-api
+          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o dist/broker-api-windows-amd64.exe ./cmd/broker-api
+          GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o dist/broker-api-darwin-arm64 ./cmd/broker-api
+          chmod +x dist/broker-api-linux-amd64
+      - name: Upload broker-api binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: broker-api-binaries
+          path: dist/*
+          retention-days: 30
 
-  browser-controller:
+  build-node-components:
     runs-on: ubuntu-latest
-    defaults:
-      run:
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build browser-controller
         working-directory: browser-controller
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: browser-controller/package-lock.json
-      - run: npm ci
-      - run: npx playwright install --with-deps chromium
-      - run: npm run build
-
-  mcp-gateway:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
+        run: |
+          npm ci
+          npm run build
+      - name: Build mcp-gateway
         working-directory: mcp-gateway
+        run: |
+          npm ci
+          npm run build
+      - name: Upload node packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: node-components-dist
+          path: |
+            browser-controller/dist
+            mcp-gateway/dist
+          retention-days: 30
+
+  remote-sandbox-test:
+    needs: [build-and-test-go, build-node-components]
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-          cache-dependency-path: mcp-gateway/package-lock.json
-      - run: npm ci
-      - run: npm run build
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Download compiled broker-api
+        uses: actions/download-artifact@v4
+        with:
+          name: broker-api-binaries
+          path: dist
+
+      - name: Make binary executable
+        run: chmod +x dist/broker-api-linux-amd64
+
+      - name: Start broker-api in background
+        run: |
+          export BROKER_ADDR=":8080"
+          export BROKER_STATE="./test-broker-state.json"
+          ./dist/broker-api-linux-amd64 &
+          echo $! > /tmp/broker_api.pid
+          sleep 2
+
+      - name: Test broker-api REST endpoints
+        run: |
+          # 1. Health check
+          HEALTH=$(curl -sf http://127.0.0.1:8080/healthz)
+          echo "Health response: $HEALTH"
+          echo "$HEALTH" | grep '"status":"ok"'
+
+          # 2. Query targets
+          TARGETS=$(curl -sf http://127.0.0.1:8080/v1/targets)
+          echo "Targets: $TARGETS"
+          echo "$TARGETS" | grep 'demo-web'
+
+          # 3. Create lease
+          LEASE_JSON=$(curl -sf -X POST http://127.0.0.1:8080/v1/leases \
+            -H 'content-type: application/json' \
+            -d '{"target_id":"demo-web","ttl_seconds":300,"budget":50}')
+          echo "Created lease: $LEASE_JSON"
+          LEASE_ID=$(echo "$LEASE_JSON" | grep -o '"id":"[^"]*' | cut -d'"' -f4)
+          echo "LEASE_ID=$LEASE_ID" >> $GITHUB_ENV
+
+          # 4. Test redaction
+          REDACT_OUT=$(curl -sf -X POST http://127.0.0.1:8080/v1/redact \
+            -H 'content-type: application/json' \
+            -d '{"text":"Authorization: Bearer mySecretToken123\nCookie: session=abc","rules":{"mySecretToken123":"TOKEN_X"}}')
+          echo "Redact response: $REDACT_OUT"
+          echo "$REDACT_OUT" | grep 'TOKEN_REDACTED'
+
+      - name: Test mitmproxy addon script
+        run: |
+          python3 -m py_compile mitm-addon/addon.py
+
+      - name: Start test-targets HTTP server
+        run: |
+          python3 -m http.server 4173 --directory test-targets &
+          echo $! > /tmp/target_server.pid
+          sleep 1
+          curl -sf http://127.0.0.1:4173/ | grep "Broker v1 test target"
+
+      - name: Run browser-controller end-to-end against test target
+        working-directory: browser-controller
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+          BROKER_API=http://127.0.0.1:8080 BROKER_LEASE=${{ env.LEASE_ID }} BROKER_TARGET_ORIGIN=http://127.0.0.1:4173 npm run dev
+
+      - name: Verify events recorded in broker-api
+        run: |
+          sleep 1
+          EVENTS=$(curl -sf http://127.0.0.1:8080/v1/leases/${{ env.LEASE_ID }}/events)
+          echo "Recorded events: $EVENTS"
+          echo "$EVENTS" | grep '"type":"request"'
+          echo "$EVENTS" | grep '"type":"response"'
+
+      - name: Teardown background processes
+        if: always()
+        run: |
+          if [ -f /tmp/broker_api.pid ]; then kill $(cat /tmp/broker_api.pid) || true; fi
+          if [ -f /tmp/target_server.pid ]; then kill $(cat /tmp/target_server.pid) || true; fi
