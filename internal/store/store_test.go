@@ -1,0 +1,4 @@
+package store
+import("path/filepath";"testing";"time";"github.com/nono-vos/broker/internal/model")
+func TestLeaseBudgetAndPersistence(t *testing.T){p:=filepath.Join(t.TempDir(),"state.json");s:=New(p);if e:=s.AddTarget(model.Target{ID:"t",Name:"T",Origins:[]string{"https://example.test"}});e!=nil{t.Fatal(e)};l,e:=s.NewLease("t",time.Minute,1);if e!=nil{t.Fatal(e)};if e=s.RecordEvent(model.Event{LeaseID:l.ID,Type:"request",URL:"https://example.test/a"});e!=nil{t.Fatal(e)};if e=s.RecordEvent(model.Event{LeaseID:l.ID,Type:"request",URL:"https://example.test/b"});e==nil{t.Fatal("expected budget error")};s2:=New(p);if _,ok:=s2.GetLease(l.ID);!ok{t.Fatal("lease was not persisted")}}
+func TestOriginBoundary(t *testing.T){tgt:=model.Target{Origins:[]string{"https://example.test"}};if !OriginAllowed(tgt,"https://evil.test"){ } else {t.Fatal("evil origin allowed")};if !OriginAllowed(tgt,"https://example.test/path"){t.Fatal("valid origin rejected")}}

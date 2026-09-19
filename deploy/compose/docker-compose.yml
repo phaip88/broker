@@ -1,0 +1,18 @@
+services:
+  broker-api:
+    build:
+      context: ../..
+      dockerfile: deploy/compose/Dockerfile.api
+    ports: ["8080:8080"]
+    restart: unless-stopped
+  browser-controller:
+    image: node:22-bookworm-slim
+    working_dir: /app/browser-controller
+    volumes: ["../..:/app"]
+    environment:
+      BROKER_TARGET_ORIGIN: http://test-target:4173
+    depends_on: [test-target]
+  test-target:
+    image: nginx:1.27-alpine
+    volumes: ["../../test-targets:/usr/share/nginx/html:ro"]
+    expose: ["80"]

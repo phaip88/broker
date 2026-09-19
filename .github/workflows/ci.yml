@@ -1,0 +1,54 @@
+name: broker-v1-ci
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache: true
+      - run: gofmt -w cmd internal
+      - run: go test -race ./...
+      - run: go vet ./...
+      - run: go build -trimpath -o dist/broker-api ./cmd/broker-api
+
+  browser-controller:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: browser-controller
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: browser-controller/package-lock.json
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run build
+
+  mcp-gateway:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mcp-gateway
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mcp-gateway/package-lock.json
+      - run: npm ci
+      - run: npm run build
