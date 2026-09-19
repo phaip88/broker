@@ -42,7 +42,15 @@ message OriginNode {
   bool allow_api = 5;
 }
 message OriginEdge { string from_node = 1; string to_node = 2; string reason = 3; }
-enum OriginKind { ORIGIN_KIND_UNSPECIFIED = 0; PRIMARY = 1; AUTH = 2; API = 3; CDN = 4; PAYMENT = 5; OTHER = 6; }
+enum OriginKind {
+  ORIGIN_KIND_UNSPECIFIED = 0;
+  ORIGIN_KIND_PRIMARY = 1;
+  ORIGIN_KIND_AUTH = 2;
+  ORIGIN_KIND_API = 3;
+  ORIGIN_KIND_CDN = 4;
+  ORIGIN_KIND_PAYMENT = 5;
+  ORIGIN_KIND_OTHER = 6;
+}
 message PutOriginGraphRequest { string project_id = 1; OriginGraph graph = 2; }
 
 message CreateLeaseRequest {
@@ -61,8 +69,19 @@ message Lease {
   ExecutionMode mode = 6;
   LeaseState state = 7;
 }
-enum ExecutionMode { EXECUTION_MODE_UNSPECIFIED = 0; OBSERVATION = 1; EXPERIMENT = 2; PRODUCTION = 3; }
-enum LeaseState { LEASE_STATE_UNSPECIFIED = 0; ACTIVE = 1; REVOKED = 2; EXPIRED = 3; EXHAUSTED = 4; }
+enum ExecutionMode {
+  EXECUTION_MODE_UNSPECIFIED = 0;
+  EXECUTION_MODE_OBSERVATION = 1;
+  EXECUTION_MODE_EXPERIMENT = 2;
+  EXECUTION_MODE_PRODUCTION = 3;
+}
+enum LeaseState {
+  LEASE_STATE_UNSPECIFIED = 0;
+  LEASE_STATE_ACTIVE = 1;
+  LEASE_STATE_REVOKED = 2;
+  LEASE_STATE_EXPIRED = 3;
+  LEASE_STATE_EXHAUSTED = 4;
+}
 message RevokeLeaseRequest { string lease_id = 1; string reason = 2; }
 
 message Event {
@@ -78,7 +97,14 @@ message Event {
   bytes redacted_metadata = 10;
   google.protobuf.Timestamp created_at = 11;
 }
-enum EventType { EVENT_TYPE_UNSPECIFIED = 0; REQUEST = 1; RESPONSE = 2; ACTION = 3; CRYPTO_OBSERVATION = 4; SESSION = 5; }
+enum EventType {
+  EVENT_TYPE_UNSPECIFIED = 0;
+  EVENT_TYPE_REQUEST = 1;
+  EVENT_TYPE_RESPONSE = 2;
+  EVENT_TYPE_ACTION = 3;
+  EVENT_TYPE_CRYPTO_OBSERVATION = 4;
+  EVENT_TYPE_SESSION = 5;
+}
 message AppendEventRequest { Event event = 1; }
 message ListEventsRequest { string lease_id = 1; uint32 limit = 2; string page_token = 3; }
 message ListEventsResponse { repeated Event events = 1; string next_page_token = 2; }
@@ -92,4 +118,11 @@ message RelayFrame {
   bytes body = 4;
   bool end_stream = 5;
 }
-enum RelayFrameType { RELAY_FRAME_TYPE_UNSPECIFIED = 0; OPEN = 1; HEADERS = 2; DATA = 3; RESET = 4; CLOSE = 5; }
+enum RelayFrameType {
+  RELAY_FRAME_TYPE_UNSPECIFIED = 0;
+  RELAY_FRAME_TYPE_OPEN = 1;
+  RELAY_FRAME_TYPE_HEADERS = 2;
+  RELAY_FRAME_TYPE_DATA = 3;
+  RELAY_FRAME_TYPE_RESET = 4;
+  RELAY_FRAME_TYPE_CLOSE = 5;
+}
